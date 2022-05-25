@@ -7,6 +7,8 @@ ADD app-src /tmp/src
 RUN /usr/bin/fix-permissions /tmp/src
 USER 1001
 
+EXPOSE 3000
+
 # Install the dependencies
 RUN /usr/libexec/s2i/assemble
 
