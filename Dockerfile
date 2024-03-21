@@ -1,16 +1,43 @@
-FROM registry.access.redhat.com/ubi8/python-36
+ARG PYTHON_VERSION=3.8.1
+FROM python:${PYTHON_VERSION}-slim as base
 
-# Add application sources to a directory that the assemble script expects them
-# and set permissions so that the container runs without root access
-USER 0
-ADD app.py /tmp/src
-RUN /usr/bin/fix-permissions /tmp/src
-USER 1001
+# Prevents Python from writing pyc files.
+ENV PYTHONDONTWRITEBYTECODE=1
 
+# Keeps Python from buffering stdout and stderr to avoid situations where
+# the application crashes without emitting any logs due to buffering.
+ENV PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+# Create a non-privileged user that the app will run under.
+# See https://docs.docker.com/go/dockerfile-user-best-practices/
+ARG UID=10001
+RUN adduser \
+    --disabled-password \
+    --gecos "" \
+    --home "/nonexistent" \
+    --shell "/sbin/nologin" \
+    --no-create-home \
+    --uid "${UID}" \
+    appuser
+
+# Download dependencies as a separate step to take advantage of Docker's caching.
+# Leverage a cache mount to /root/.cache/pip to speed up subsequent builds.
+# Leverage a bind mount to requirements.txt to avoid having to copy them into
+# into this layer.
+RUN --mount=type=cache,target=/root/.cache/pip \
+    --mount=type=bind,source=requirements.txt,target=requirements.txt \
+    python -m pip install -r requirements.txt
+
+# Switch to the non-privileged user to run the application.
+USER appuser
+
+# Copy the source code into the container.
+COPY . .
+
+# Expose the port that the application listens on.
 EXPOSE 3000
 
-# Install the dependencies
-RUN /usr/libexec/s2i/assemble
-
-# Set the default command for the resulting image
-CMD /usr/libexec/s2i/run
+# Run the application.
+CMD python3 -m flask --host=0.0.0.0
